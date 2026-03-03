@@ -1,6 +1,6 @@
 {
   "name": "zvibe-kits",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Zvibe - Ghostty/zellij multi-agent development workspace launcher",
   "bin": {
     "zvibe": "bin/zvibe"
