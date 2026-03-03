@@ -1,12 +1,13 @@
 {
   "name": "zvibe-kits",
-  "version": "1.0.0",
-  "description": "Zvibe - Ghostty multi-agent development workspace launcher",
+  "version": "1.2.0",
+  "description": "Zvibe - Ghostty/zellij multi-agent development workspace launcher",
   "bin": {
     "zvibe": "bin/zvibe"
   },
   "keywords": [
     "ghostty",
+    "zellij",
     "claude",
     "codex",
     "opencode",
@@ -28,6 +29,7 @@
     "node": ">=18"
   },
   "files": [
-    "bin"
+    "bin",
+    "src"
   ]
 }
