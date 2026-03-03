@@ -16,6 +16,7 @@ Zvibe Kits 是一个面向 macOS 的多 Agent 开发工作台启动器。
 - 终端面板组合：左上文件、左下 commit、右侧 Agent
 - 可选右下 Terminal：`-t, --terminal`（单 Agent 模式）
 - 后端策略：`ghostty` / `zellij` / `auto`
+- 自动 Git 初始化防呆：在 `HOME`/根目录自动跳过，避免误初始化
 - 配置管理与运维命令：`setup` / `config` / `status` / `update`
 - JSON 输出能力：`--json`（便于脚本集成）
 

@@ -1,15 +1,10 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
 
-# Resolve symlinks so global npm bin shims point back to this package directory.
-SOURCE="$0"
-while [ -L "$SOURCE" ]; do
-  SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ "$SOURCE" != /* ]] && SOURCE="$SCRIPT_DIR/$SOURCE"
-done
+// Resolve symlinks so npm global bin shims still map to this package root.
+const scriptPath = fs.realpathSync(__filename);
+const rootDir = path.resolve(path.dirname(scriptPath), '..');
+const cliPath = path.join(rootDir, 'src', 'cli.js');
 
-SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-exec node "${ROOT_DIR}/src/cli.js" "$@"
+require(cliPath);

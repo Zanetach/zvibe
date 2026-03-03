@@ -117,7 +117,18 @@ function selectBackend(requested, fallbackEnabled, output) {
 }
 
 function renderUsage() {
-  return `Zvibe Kits\n\nCommands:\n  zvibe setup [--repair] [--no-repair]\n  zvibe config wizard\n  zvibe config get <key>\n  zvibe config set <key> <value>\n  zvibe config validate\n  zvibe config explain\n  zvibe status [--doctor] [--json]\n  zvibe update\n\nRun:\n  zvibe\n  zvibe codex|claude|opencode|code\n  zvibe <dir> [codex|claude|opencode|code]\n  zvibe [codex|claude|opencode|code] <dir>\n\nGlobal:\n  --backend auto|ghostty|zellij   后端选择（auto: 优先 ghostty，失败降级 zellij）\n  -t, --terminal                  单 Agent 模式下右侧增加 Terminal（右上 Agent，右下 Terminal）\n  --json                          以 JSON 输出结果\n  --verbose                       输出诊断细节\n`;
+  return `${renderBanner()}Commands:\n  zvibe setup [--repair] [--no-repair]\n  zvibe config wizard\n  zvibe config get <key>\n  zvibe config set <key> <value>\n  zvibe config validate\n  zvibe config explain\n  zvibe status [--doctor] [--json]\n  zvibe update\n\nRun:\n  zvibe\n  zvibe codex|claude|opencode|code\n  zvibe <dir> [codex|claude|opencode|code]\n  zvibe [codex|claude|opencode|code] <dir>\n\nGlobal:\n  --backend auto|ghostty|zellij   后端选择（auto: 优先 ghostty，失败降级 zellij）\n  -t, --terminal                  单 Agent 模式下右侧增加 Terminal（右上 Agent，右下 Terminal）\n  --json                          以 JSON 输出结果\n  --verbose                       输出诊断细节\n`;
+}
+
+function renderBanner() {
+  return ` ______     _ _        _        _  ___ _ _     
+|___  /    (_) |      | |      | |/ (_) | |    
+   / /_   _ _| |__ ___| | _____| ' / _| | |_   
+  / /| | | | | '_ \\_  / |/ / _ \\  < | | | __|  
+ / /_| |_| | | |_) / /|   <  __/ . \\| | | |_   
+/_____\\__,_|_|_.__/___|_|\\_\\___|_|\\_\\_|_|\\__|  
+
+                 Zvibe Kits\n\n`;
 }
 
 function commandSummary(summary, output) {
@@ -224,6 +235,7 @@ async function cmdSetup(flags, output) {
   const noRepair = !!flags.noRepair;
   const overwritePluginConfigs = noRepair ? false : true;
   if (!output.json) {
+    process.stdout.write(renderBanner());
     process.stdout.write('== Step 1/2 检测安装 ==\n');
   }
 
@@ -472,13 +484,61 @@ function cmdUpdate(output) {
   commandSummary({ ok: true, command: 'update' }, output);
 }
 
+function isUnsafeAutoGitInitTarget(targetDir) {
+  const resolved = path.resolve(targetDir);
+  const homeDir = path.resolve(os.homedir());
+
+  if (resolved === homeDir) {
+    return { unsafe: true, reason: '目标目录是用户主目录（HOME）' };
+  }
+
+  if (resolved === path.parse(resolved).root) {
+    return { unsafe: true, reason: '目标目录是文件系统根目录' };
+  }
+
+  return { unsafe: false, reason: '' };
+}
+
 function autoGitInit(targetDir, config, output) {
   if (!config.autoGitInit) return;
   if (fs.existsSync(path.join(targetDir, '.git'))) return;
   if (!commandExists('git')) return;
-  run('git', ['init'], { cwd: targetDir });
-  run('git', ['add', '-A'], { cwd: targetDir });
-  run('git', ['commit', '-m', 'init: zvibe workspace'], { cwd: targetDir });
+
+  const safety = isUnsafeAutoGitInitTarget(targetDir);
+  if (safety.unsafe) {
+    output.warn(`已跳过自动 Git 初始化：${safety.reason} (${targetDir})`);
+    output.info('建议：切换到具体项目目录后再运行 zvibe');
+    return;
+  }
+
+  if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+    output.warn(`已跳过自动 Git 初始化：目录不存在或不可访问 (${targetDir})`);
+    return;
+  }
+
+  const initResult = run('git', ['init'], { cwd: targetDir, capture: true });
+  if (!initResult.ok) {
+    output.warn(`自动 git init 失败，已跳过后续步骤: ${initResult.stderr || initResult.stdout}`);
+    return;
+  }
+
+  const addResult = run('git', ['add', '-A'], { cwd: targetDir, capture: true });
+  if (!addResult.ok) {
+    output.warn(`自动 git add 失败，已跳过提交: ${addResult.stderr || addResult.stdout}`);
+    return;
+  }
+
+  const commitResult = run('git', ['commit', '-m', 'init: zvibe workspace'], { cwd: targetDir, capture: true });
+  if (!commitResult.ok) {
+    const combined = `${commitResult.stderr || ''}\n${commitResult.stdout || ''}`.toLowerCase();
+    if (combined.includes('nothing to commit')) {
+      output.info(`git 仓库已初始化（无可提交变更）: ${targetDir}`);
+      return;
+    }
+    output.warn(`自动 git commit 失败（可忽略）: ${commitResult.stderr || commitResult.stdout}`);
+    return;
+  }
+
   output.info(`已初始化 git 仓库: ${targetDir}`);
 }
 
