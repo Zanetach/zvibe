@@ -36,6 +36,18 @@ npm i -g @zanetach/zvibe
 npx @zanetach/zvibe setup
 ```
 
+### 离线安装（从 GitHub Release 下载）
+
+Release 页面：
+`https://github.com/Zanetach/zvibe-kits/releases/tag/v2.0.0`
+
+下载安装包并安装：
+
+```bash
+curl -L -o zvibe-2.0.0.tgz https://github.com/Zanetach/zvibe-kits/releases/download/v2.0.0/zvibe-2.0.0.tgz
+npm i -g ./zvibe-2.0.0.tgz
+```
+
 ### 初始化建议
 
 ```bash
