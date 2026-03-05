@@ -6,6 +6,7 @@ const { execSync } = require('child_process');
 
 const TICK_MS = 1000;
 const RESCAN_EVERY = 8;
+const WEATHER_RESCAN_EVERY = 900;
 const SPINNER = ['|', '/', '-', '\\'];
 const CPU_BARS = '▁▂▃▄▅▆▇█';
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
@@ -20,8 +21,23 @@ const ICONS = {
   model: '󱚟',
   tok: '󰏗',
   ctx: '󰆼',
-  cost: '󰇭'
+  cost: '󰇭',
+  weather: '󰖙',
+  hype: '󰐕',
+  quote: '󰃧'
 };
+const FUN_QUOTES = [
+  'Ship small, ship often.',
+  'Bug today, brag tomorrow.',
+  'Keep calm and git commit.',
+  'Write tests, fear less.',
+  'Coffee in, features out.',
+  'No panic, just patch.',
+  'One more run, then done.',
+  'Make it work, then wow.',
+  'Done beats perfect.',
+  'Refactor with mercy.'
+];
 
 let spin = 0;
 let tick = 0;
@@ -29,10 +45,12 @@ let cpuHistory = [];
 let prevCpu = readCpuSnapshot();
 let prevNet = readNetworkBytes();
 let prevAt = Date.now();
+let activityHistory = [];
 let usageState = { model: null, input: null, output: null, total: null, context: null, cost: null };
 let gpuState = { model: null, util: 0, raw: null, source: 'fallback' };
 let prevTokenSnapshot = { input: null, output: null, total: null };
 let extraState = { load1: null, diskUsed: null, battery: null, charging: null };
+let weatherState = { text: null };
 
 function supportsColor() {
   return process.stdout.isTTY && !process.env.NO_COLOR;
@@ -502,6 +520,25 @@ function readSystemExtras() {
   return extras;
 }
 
+function readWeather() {
+  const location = String(process.env.ZVIBE_WEATHER_LOCATION || '').trim();
+  const encodedLocation = location ? encodeURIComponent(location) : '';
+  const target = encodedLocation ? `https://wttr.in/${encodedLocation}?format=%C+%t` : 'https://wttr.in/?format=%C+%t';
+  const safeUrl = target.replace(/(["\\$`])/g, '\\$1');
+  try {
+    const out = execSync(`curl -fsS --max-time 2 "${safeUrl}"`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2500
+    }).trim();
+    if (!out) return { text: null };
+    const cleaned = out.replace(/\s+/g, ' ').trim();
+    return { text: cleaned };
+  } catch {
+    return { text: null };
+  }
+}
+
 function formatUptimeCompact(seconds) {
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);
@@ -563,6 +600,9 @@ function render() {
     gpuState = readGpuInfo();
     extraState = readSystemExtras();
   }
+  if (tick % WEATHER_RESCAN_EVERY === 1) {
+    weatherState = readWeather();
+  }
 
   const now = Date.now();
   const elapsed = Math.max(0.2, (now - prevAt) / 1000);
@@ -595,6 +635,10 @@ function render() {
   const deltaTotal = Number.isFinite(usageState.total) && Number.isFinite(prevTokenSnapshot.total)
     ? usageState.total - prevTokenSnapshot.total
     : NaN;
+  const tokenPulse = Math.max(0, Number.isFinite(deltaTotal) ? deltaTotal : 0);
+  const activityScore = Math.max(0, Math.min(100, Math.round((cpu * 0.5) + (gpuPct * 0.2) + Math.min(100, tokenPulse / 20))));
+  activityHistory.push(activityScore);
+  if (activityHistory.length > 18) activityHistory = activityHistory.slice(-18);
 
   if (Number.isFinite(usageState.input)) prevTokenSnapshot.input = usageState.input;
   if (Number.isFinite(usageState.output)) prevTokenSnapshot.output = usageState.output;
@@ -627,11 +671,19 @@ function render() {
   const ctxCostLabel = `${ICONS.ctx}${ICON_VALUE_GAP}${ctxValue}${FIELD_GAP}${ICONS.cost}${ICON_VALUE_GAP}${costValue}`;
   const middle = [modelLabel, tokenLabel, ctxCostLabel].join(FIELD_GAP);
 
+  const quoteIdx = Math.floor(tick / 8) % FUN_QUOTES.length;
+  const quoteText = FUN_QUOTES[quoteIdx];
+  const quoteColor = color(shorten(quoteText, 26), 255, 203, 107);
+  const weatherText = weatherState.text ? color(shorten(weatherState.text, 20), 110, 214, 250) : dim('--');
+  const hypeText = colorByPercent(activityScore, `${activityScore}%`);
   const rightFields = [
     `⏱${ICON_VALUE_GAP}${formatUptimeCompact(uptime)}`,
     `LA${ICON_VALUE_GAP}${loadValue}`,
     `💽${ICON_VALUE_GAP}${diskValue}`,
     `🔋${ICON_VALUE_GAP}${battText}`,
+    `${ICONS.weather}${ICON_VALUE_GAP}${weatherText}`,
+    `${ICONS.hype}${ICON_VALUE_GAP}${hypeText}${ICON_VALUE_GAP}${color(sparkline(activityHistory), 255, 165, 80)}`,
+    `${ICONS.quote}${ICON_VALUE_GAP}${quoteColor}`,
     SPINNER[spin]
   ];
   const right = rightFields.join(FIELD_GAP);
