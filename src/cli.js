@@ -184,14 +184,7 @@ function renderUsage() {
 }
 
 function renderBanner() {
-  return ` ______     _ _        _        _  ___ _ _     
-|___  /    (_) |      | |      | |/ (_) | |    
-   / /_   _ _| |__ ___| | _____| ' / _| | |_   
-  / /| | | | | '_ \\_  / |/ / _ \\  < | | | __|  
- / /_| |_| | | |_) / /|   <  __/ . \\| | | |_   
-/_____\\__,_|_|_.__/___|_|\\_\\___|_|\\_\\_|_|\\__|  
-
-                 zvibe\n\n`;
+  return `zvibe\n\n`;
 }
 
 function commandSummary(summary, output) {
