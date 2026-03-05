@@ -612,10 +612,11 @@ function render() {
     ? dim('--')
     : colorByPercent(100 - extraState.battery, `${battPct}${extraState.charging === true ? '⚡' : ''}`);
 
+  const gpuSource = dim(gpuState.source === 'powermetrics' ? 'pm' : 'io');
   const gpuModel = gpuState.model ? `${ICON_VALUE_GAP}${dim(shorten(gpuState.model, 10))}` : '';
   const leftFields = [
     `${ICONS.cpu}${ICON_VALUE_GAP}${cpuText}${ICON_VALUE_GAP}${color(sparkline(cpuHistory), 120, 175, 255)}`,
-    `${ICONS.gpu}${ICON_VALUE_GAP}${gpuText}${gpuModel}`,
+    `${ICONS.gpu}${ICON_VALUE_GAP}${gpuText}${ICON_VALUE_GAP}${gpuSource}${gpuModel}`,
     `${ICONS.mem}${ICON_VALUE_GAP}${memText}`,
     `${ICONS.net}${ICON_VALUE_GAP}↓ ${netInText}${ICON_VALUE_GAP}↑ ${netOutText}`
   ];
@@ -631,7 +632,6 @@ function render() {
     `LA${ICON_VALUE_GAP}${loadValue}`,
     `💽${ICON_VALUE_GAP}${diskValue}`,
     `🔋${ICON_VALUE_GAP}${battText}`,
-    `GPU${ICON_VALUE_GAP}${dim(gpuState.source === 'powermetrics' ? 'pm' : 'io')}`,
     SPINNER[spin]
   ];
   const right = rightFields.join(FIELD_GAP);

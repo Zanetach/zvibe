@@ -784,10 +784,10 @@ function cmdRun(positional, flags, output) {
     })
   };
   const sessionTag = terminalOnly
-    ? 'terminal-sb2'
+    ? 'terminal-sb3'
     : (codeMode
-    ? `code-${config.agentPair[0]}-${config.agentPair[1]}-sb2`
-    : `${mode}-sb2`);
+    ? `code-${config.agentPair[0]}-${config.agentPair[1]}-sb3`
+    : `${mode}-sb3`);
 
   autoGitInit(targetDir, config, output);
   const backend = selectBackend(config.backend, output);

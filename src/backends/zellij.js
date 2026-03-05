@@ -91,6 +91,9 @@ function launch({ targetDir, commands, freshSession = false, sessionTag = '' }) 
       // Inside zellij: always open a new tab with the latest layout.
       // This avoids attaching stale sessions that may not contain recent layout updates.
       mustRun('zellij', ['action', 'new-tab', '--name', name, '--cwd', targetDir, '--layout', layoutFile], '请检查当前 zellij 会话状态', { capture: true });
+      // Some zellij setups keep focus on current tab after creating a new tab.
+      // Move focus to make the new zvibe tab immediately visible.
+      run('zellij', ['action', 'go-to-next-tab'], { capture: true });
       applyPaneFrames();
       return;
     }
