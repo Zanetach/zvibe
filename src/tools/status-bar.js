@@ -636,6 +636,7 @@ function render() {
   const now = Date.now();
   const elapsed = Math.max(0.2, (now - prevAt) / 1000);
   prevAt = now;
+  const max = process.stdout.columns || 120;
 
   const cpu = readCpuPercent();
   cpuHistory.push(cpu);
@@ -720,8 +721,12 @@ function render() {
 
   const modelLabel = `${ICONS.model}${ICON_VALUE_GAP}${color(shorten(usageState.model || '--', 16), 120, 175, 255)}${ICON_VALUE_GAP}SIG ${sigText}`;
   const tokenLabel = `${ICONS.tok}${ICON_VALUE_GAP}I ${tokInText}${ICON_VALUE_GAP}O ${tokOutText}${ICON_VALUE_GAP}T ${tokTotalText}${ICON_VALUE_GAP}TPS ${tpsInText}/${tpsOutText}/${tpsTotalText}`;
+  const tokenLabelCompact = `${ICONS.tok}${ICON_VALUE_GAP}T ${tokTotalText}${ICON_VALUE_GAP}TPS ${tpsTotalText}`;
   const ctxCostLabel = `${ICONS.ctx}${ICON_VALUE_GAP}${ctxValue}${ICON_VALUE_GAP}ETA ${etaText}${FIELD_GAP}${ICONS.cost}${ICON_VALUE_GAP}${costValue}`;
-  const middle = [modelLabel, tokenLabel, ctxCostLabel].join(FIELD_GAP);
+  const ctxEtaLabel = `${ICONS.ctx}${ICON_VALUE_GAP}${ctxValue}${ICON_VALUE_GAP}ETA ${etaText}`;
+  const middleFull = [modelLabel, tokenLabel, ctxCostLabel].join(FIELD_GAP);
+  const middleCompact = [modelLabel, tokenLabelCompact, ctxEtaLabel].join(FIELD_GAP);
+  const middle = max < 145 ? middleCompact : middleFull;
 
   const quoteIdx = Math.floor(tick / 8) % FUN_QUOTES.length;
   const quoteText = FUN_QUOTES[quoteIdx];
@@ -738,14 +743,25 @@ function render() {
     `${ICONS.quote}${ICON_VALUE_GAP}${quoteColor}`,
     SPINNER[spin]
   ];
-  const right = rightFields.join(FIELD_GAP);
+  const rightCompactFields = [
+    `⏱${ICON_VALUE_GAP}${formatUptimeCompact(uptime)}`,
+    `LA${ICON_VALUE_GAP}${loadValue}`,
+    `${ICONS.weather}${ICON_VALUE_GAP}${weatherText}`,
+    `${ICONS.hype}${ICON_VALUE_GAP}${hypeText}`,
+    SPINNER[spin]
+  ];
+  const rightMinimalFields = [
+    `⏱${ICON_VALUE_GAP}${formatUptimeCompact(uptime)}`,
+    `${ICONS.weather}${ICON_VALUE_GAP}${weatherText}`,
+    SPINNER[spin]
+  ];
+  const right = (max < 115 ? rightMinimalFields : (max < 145 ? rightCompactFields : rightFields)).join(FIELD_GAP);
 
   if (!process.stdout.isTTY) {
     process.stdout.write(`${left} | ${middle} | ${right}\n`);
     return;
   }
 
-  const max = process.stdout.columns || 120;
   const line = layoutThreeColumns(left, middle, right, max);
   process.stdout.write(`\x1b[2K\r${shorten(line, max)}`);
 }
