@@ -184,13 +184,29 @@ function renderUsage() {
 }
 
 function renderBanner() {
-  return ` _____   _ _     _           
+  const plain = ` _____   _ _     _           
 |__  / _| (_)___| |__   ___  
   / / |_  | / __| '_ \\ / _ \\ 
  / /|  _| | \\__ \\ | | |  __/ 
 /____|_| |_|_|___/_| |_|\\___| 
 
                  zvibe\n\n`;
+  if (!process.stdout.isTTY || process.env.NO_COLOR) return plain;
+
+  const lines = plain.split('\n');
+  const start = [109, 188, 255]; // aurora
+  const end = [160, 120, 255];
+  const paint = (text, r, g, b) => `\x1b[38;2;${r};${g};${b}m${text}\x1b[0m`;
+
+  const colored = lines.map((line, idx) => {
+    const t = lines.length <= 1 ? 0 : (idx / (lines.length - 1));
+    const r = Math.round(start[0] + ((end[0] - start[0]) * t));
+    const g = Math.round(start[1] + ((end[1] - start[1]) * t));
+    const b = Math.round(start[2] + ((end[2] - start[2]) * t));
+    return line ? paint(line, r, g, b) : line;
+  }).join('\n');
+
+  return colored;
 }
 
 function commandSummary(summary, output) {
