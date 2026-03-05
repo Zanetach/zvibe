@@ -38,20 +38,27 @@ function paneKdl(targetDir, command, paneName, size = null) {
 
 function buildLayout(targetDir, commands) {
   const panePrefix = 'zvibe';
+  const minimalTerminal = !!commands.minimalTerminal;
+  const statusBar = paneKdl(targetDir, commands.statusBar || 'true', `${panePrefix}:monitor`, '3');
+  const rightTopRole = commands.rightTopRole || 'agent';
+  const rightTop = paneKdl(targetDir, commands.rightTop, `${panePrefix}:${rightTopRole}`);
+
+  if (minimalTerminal) {
+    return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" {\n      ${rightTop}\n    }\n    ${statusBar}\n  }\n}\n`;
+  }
+
   const leftTop = paneKdl(targetDir, commands.leftTop, `${panePrefix}:file`);
   const leftBottom = paneKdl(targetDir, commands.leftBottom, `${panePrefix}:commit`);
   const rightBottomIsTerminal = commands.rightBottom === 'true';
-  const rightTopRole = commands.rightTopRole || 'agent';
   const rightTopSize = rightBottomIsTerminal ? '70%' : '50%';
   const rightBottomSize = rightBottomIsTerminal ? '30%' : '50%';
-  const rightTop = paneKdl(targetDir, commands.rightTop, `${panePrefix}:${rightTopRole}`, rightTopSize);
-  const statusBar = paneKdl(targetDir, commands.statusBar || 'true', `${panePrefix}:monitor`, '3');
+  const rightTopSized = paneKdl(targetDir, commands.rightTop, `${panePrefix}:${rightTopRole}`, rightTopSize);
 
   if (!commands.rightBottom) {
-    return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" split_direction="Vertical" {\n      pane size="45%" split_direction="Horizontal" {\n        ${leftTop}\n        ${leftBottom}\n      }\n      pane size="55%" {\n        ${rightTop}\n      }\n    }\n    ${statusBar}\n  }\n}\n`;
+    return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" split_direction="Vertical" {\n      pane size="45%" split_direction="Horizontal" {\n        ${leftTop}\n        ${leftBottom}\n      }\n      pane size="55%" {\n        ${rightTopSized}\n      }\n    }\n    ${statusBar}\n  }\n}\n`;
   }
   const rightBottom = paneKdl(targetDir, commands.rightBottom, `${panePrefix}:${rightBottomIsTerminal ? 'terminal' : 'agent'}`, rightBottomSize);
-  return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" split_direction="Vertical" {\n      pane size="45%" split_direction="Horizontal" {\n        ${leftTop}\n        ${leftBottom}\n      }\n      pane size="55%" split_direction="Horizontal" {\n        ${rightTop}\n        ${rightBottom}\n      }\n    }\n    ${statusBar}\n  }\n}\n`;
+  return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" split_direction="Vertical" {\n      pane size="45%" split_direction="Horizontal" {\n        ${leftTop}\n        ${leftBottom}\n      }\n      pane size="55%" split_direction="Horizontal" {\n        ${rightTopSized}\n        ${rightBottom}\n      }\n    }\n    ${statusBar}\n  }\n}\n`;
 }
 
 function writeLayout(targetDir, commands) {

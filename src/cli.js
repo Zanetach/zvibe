@@ -772,11 +772,12 @@ function cmdRun(positional, flags, output) {
     : (codeMode ? buildAgentCommand(config.agentPair[0]) : buildAgentCommand(mode, passthroughArgs));
   const secondaryAgent = codeMode ? buildAgentCommand(config.agentPair[1]) : '';
   const commands = {
-    leftTop: 'yazi',
-    leftBottom: 'keifu',
+    leftTop: terminalOnly ? '' : 'yazi',
+    leftBottom: terminalOnly ? '' : 'keifu',
     rightTop: primaryAgent,
     rightTopRole: terminalOnly ? 'terminal' : 'agent',
     rightBottom: terminalOnly ? '' : (codeMode ? secondaryAgent : (config.rightTerminal ? 'true' : '')),
+    minimalTerminal: terminalOnly,
     statusBar: buildStatusBarCommand({
       primaryAgent: terminalOnly ? '' : (codeMode ? config.agentPair[0] : mode),
       secondaryAgent: codeMode ? config.agentPair[1] : ''
