@@ -5,7 +5,11 @@ const { run, commandExists } = require('../core/process');
 const { ZvibeError, ERRORS } = require('../core/errors');
 
 function sessionName(targetDir, sessionTag = '') {
-  const base = targetDir.split('/').filter(Boolean).pop().replace(/[^a-zA-Z0-9_-]/g, '-');
+  const rawBase = targetDir.split('/').filter(Boolean).pop();
+  const normalizedBase = String(rawBase || 'workspace')
+    .replace(/(?:[_-]?kits?)$/i, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '-');
+  const base = normalizedBase || 'workspace';
   const tag = String(sessionTag || '').trim().replace(/[^a-zA-Z0-9_-]/g, '-');
   if (!tag) return base;
   return `${base}-${tag}`;
