@@ -30,6 +30,7 @@ let prevAt = Date.now();
 let usageState = { model: null, input: null, output: null, total: null, context: null, cost: null };
 let gpuState = { model: null, util: 0, raw: null, source: 'fallback' };
 let prevTokenSnapshot = { input: null, output: null, total: null };
+let extraState = { load1: null, diskUsed: null, battery: null, charging: null };
 
 function supportsColor() {
   return process.stdout.isTTY && !process.env.NO_COLOR;
@@ -131,6 +132,15 @@ function formatRate(bytesPerSecond) {
   return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)}${units[idx]}`;
 }
 
+function formatCompactNumber(value) {
+  if (!Number.isFinite(value)) return '--';
+  const abs = Math.abs(value);
+  if (abs >= 1e9) return `${(value / 1e9).toFixed(1)}b`;
+  if (abs >= 1e6) return `${(value / 1e6).toFixed(1)}m`;
+  if (abs >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
+  return String(Math.round(value));
+}
+
 function formatPercent(v) {
   return `${Math.round(v)}%`;
 }
@@ -165,6 +175,10 @@ function shorten(text, max) {
     i += 1;
   }
   return `${out}…${supportsColor() ? RESET : ''}`;
+}
+
+function visibleLength(text) {
+  return String(text || '').replace(ANSI_RE, '').length;
 }
 
 function findLatestFiles(pattern, limit = 8) {
@@ -408,6 +422,56 @@ function readGpuInfo() {
   return gpuState;
 }
 
+function readSystemExtras() {
+  const extras = { load1: null, diskUsed: null, battery: null, charging: null };
+  try {
+    const load = os.loadavg()[0];
+    if (Number.isFinite(load)) extras.load1 = load;
+  } catch {}
+
+  try {
+    const out = execSync('df -k .', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const line = out.split('\n').filter(Boolean)[1] || '';
+    const parts = line.trim().split(/\s+/);
+    const useStr = parts[4] || '';
+    const use = Number(useStr.replace('%', ''));
+    if (Number.isFinite(use)) extras.diskUsed = use;
+  } catch {}
+
+  try {
+    const batt = execSync('pmset -g batt 2>/dev/null', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const m = batt.match(/(\d+)%/);
+    if (m && m[1]) {
+      const pct = Number(m[1]);
+      if (Number.isFinite(pct)) extras.battery = pct;
+    }
+    if (/AC Power|charging/i.test(batt)) extras.charging = true;
+    if (/discharging|Battery Power/i.test(batt)) extras.charging = false;
+  } catch {}
+
+  return extras;
+}
+
+function formatUptimeCompact(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
+  return `${m}m`;
+}
+
+function safeUptimeSeconds() {
+  try {
+    const up = os.uptime();
+    if (Number.isFinite(up) && up >= 0) return up;
+  } catch {}
+  try {
+    const up = process.uptime();
+    if (Number.isFinite(up) && up >= 0) return up;
+  } catch {}
+  return 0;
+}
+
 function preferredAgents() {
   const fromEnv = [process.env.ZVIBE_PRIMARY_AGENT, process.env.ZVIBE_SECONDARY_AGENT]
     .map((x) => String(x || '').trim())
@@ -447,6 +511,7 @@ function render() {
   if (tick % RESCAN_EVERY === 1) {
     usageState = resolveUsage();
     gpuState = readGpuInfo();
+    extraState = readSystemExtras();
   }
 
   const now = Date.now();
@@ -462,6 +527,7 @@ function render() {
   const netInRate = Math.max(0, (netNow.inBytes - prevNet.inBytes) / elapsed);
   const netOutRate = Math.max(0, (netNow.outBytes - prevNet.outBytes) / elapsed);
   prevNet = netNow;
+  const uptime = safeUptimeSeconds();
 
   const gpuPct = gpuState.util == null ? 0 : gpuState.util;
   const cpuText = colorByPercent(cpu, formatPercent(cpu));
@@ -484,27 +550,62 @@ function render() {
   if (Number.isFinite(usageState.output)) prevTokenSnapshot.output = usageState.output;
   if (Number.isFinite(usageState.total)) prevTokenSnapshot.total = usageState.total;
 
-  const tokInText = usageState.input == null ? dim('--') : colorByTokenDelta(deltaIn, usageState.input.toLocaleString());
-  const tokOutText = usageState.output == null ? dim('--') : colorByTokenDelta(deltaOut, usageState.output.toLocaleString());
-  const tokTotalText = usageState.total == null ? dim('--') : colorByTokenDelta(deltaTotal, usageState.total.toLocaleString());
-  const ctxValue = usageState.context == null ? dim('--') : color(usageState.context.toLocaleString(), 176, 132, 255);
+  const tokInText = usageState.input == null ? dim('--') : colorByTokenDelta(deltaIn, formatCompactNumber(usageState.input));
+  const tokOutText = usageState.output == null ? dim('--') : colorByTokenDelta(deltaOut, formatCompactNumber(usageState.output));
+  const tokTotalText = usageState.total == null ? dim('--') : colorByTokenDelta(deltaTotal, formatCompactNumber(usageState.total));
+  const ctxValue = usageState.context == null ? dim('--') : color(formatCompactNumber(usageState.context), 176, 132, 255);
   const costValue = usageState.cost == null ? dim('--') : colorByCost(usageState.cost, `$${usageState.cost.toFixed(4)}`);
+  const loadValue = extraState.load1 == null ? dim('--') : colorByPercent(Math.min(100, (extraState.load1 / Math.max(1, os.cpus().length)) * 100), extraState.load1.toFixed(2));
+  const diskValue = extraState.diskUsed == null ? dim('--') : colorByPercent(extraState.diskUsed, `${extraState.diskUsed}%`);
+  const battPct = extraState.battery == null ? '--' : `${extraState.battery}%`;
+  const battText = extraState.battery == null
+    ? dim('--')
+    : colorByPercent(100 - extraState.battery, `${battPct}${extraState.charging === true ? '⚡' : ''}`);
 
   const gpuModel = gpuState.model ? ` ${dim(shorten(gpuState.model, 10))}` : '';
   const gpuLabel = `${ICONS.gpu} ${gpuText}${gpuModel}`;
-  const left = `${ICONS.cpu} ${cpuText} ${color(sparkline(cpuHistory), 120, 175, 255)}  ${gpuLabel}  ${ICONS.mem} ${memText}  ${ICONS.net} IN ${netInText} OUT ${netOutText}`;
-  const modelLabel = `${ICONS.model} ${color(shorten(usageState.model || '--', 20), 120, 175, 255)}`;
-  const tokenLabel = `${ICONS.tok} I ${tokInText} O ${tokOutText} T ${tokTotalText}`;
-  const ctxCostLabel = `${ICONS.ctx} ${ctxValue} ${ICONS.cost} ${costValue}`;
-  const right = `${modelLabel}  ${tokenLabel}  ${ctxCostLabel}  ${SPINNER[spin]}`;
-  const line = `${left}  |  ${right}`;
+  const left = `${ICONS.cpu}${cpuText} ${color(sparkline(cpuHistory), 120, 175, 255)}  ${gpuLabel}  ${ICONS.mem}${memText}  ${ICONS.net}↓${netInText} ↑${netOutText}`;
+  const modelLabel = `${ICONS.model}${color(shorten(usageState.model || '--', 14), 120, 175, 255)}`;
+  const tokenLabel = `${ICONS.tok}I${tokInText} O${tokOutText} T${tokTotalText}`;
+  const ctxCostLabel = `${ICONS.ctx}${ctxValue} ${ICONS.cost}${costValue}`;
+  const middle = `${modelLabel}  ${tokenLabel}  ${ctxCostLabel}`;
+  const right = `⏱${formatUptimeCompact(uptime)} LA${loadValue} 💽${diskValue} 🔋${battText} GPU:${dim(gpuState.source === 'powermetrics' ? 'pm' : 'io')} ${SPINNER[spin]}`;
 
   if (!process.stdout.isTTY) {
-    process.stdout.write(`${line}\n`);
+    process.stdout.write(`${left} | ${middle} | ${right}\n`);
     return;
   }
 
   const max = process.stdout.columns || 120;
+  const sep = '  |  ';
+  let leftPart = left;
+  let middlePart = middle;
+  const leftLen = visibleLength(leftPart);
+  const middleLen = visibleLength(middlePart);
+  const rightLen = visibleLength(right);
+
+  let line = '';
+  const fullLen = leftLen + visibleLength(sep) + middleLen + 1 + rightLen;
+  if (fullLen <= max) {
+    const base = `${leftPart}${sep}${middlePart}`;
+    const pad = Math.max(1, max - visibleLength(base) - rightLen);
+    line = `${base}${' '.repeat(pad)}${right}`;
+  } else {
+    const middleBudget = max - leftLen - rightLen - visibleLength(sep) - 1;
+    if (middleBudget >= 12) {
+      middlePart = shorten(middlePart, middleBudget);
+      const base = `${leftPart}${sep}${middlePart}`;
+      const pad = Math.max(1, max - visibleLength(base) - rightLen);
+      line = `${base}${' '.repeat(pad)}${right}`;
+    } else {
+      const leftBudget = max - rightLen - visibleLength(sep) - 1;
+      leftPart = shorten(leftPart, Math.max(12, leftBudget));
+      const base = `${leftPart}${sep}`;
+      const pad = Math.max(1, max - visibleLength(base) - rightLen);
+      line = `${base}${' '.repeat(pad)}${right}`;
+    }
+  }
+
   process.stdout.write(`\x1b[2K\r${shorten(line, max)}`);
 }
 
