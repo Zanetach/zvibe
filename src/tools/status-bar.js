@@ -8,6 +8,8 @@ const TICK_MS = 1000;
 const RESCAN_EVERY = 30;
 const SPINNER = ['|', '/', '-', '\\'];
 const CPU_BARS = '▁▂▃▄▅▆▇█';
+const TOKEN_FILE_INCLUDE = /(usage|token|conversation|session|history|transcript|log)/i;
+const TOKEN_FILE_EXCLUDE = /(failed_events|telemetry|analytics|crash|diagnostic)/i;
 
 let spin = 0;
 let tick = 0;
@@ -114,6 +116,8 @@ function findLatestTokenFile(baseDir, depth = 0) {
     }
     if (!entry.isFile()) continue;
     if (!/\.(jsonl|json|log|txt)$/i.test(entry.name)) continue;
+    if (TOKEN_FILE_EXCLUDE.test(entry.name)) continue;
+    if (!TOKEN_FILE_INCLUDE.test(entry.name)) continue;
     const mtime = latestMtime(full);
     if (!best || mtime > best.mtime) best = { file: full, mtime };
   }
@@ -151,34 +155,66 @@ function readTail(filePath, maxBytes = 200 * 1024) {
   }
 }
 
-function parseTokenUsage(text) {
-  if (!text) return null;
-
-  const totalPatterns = [
-    /"total_tokens"\s*:\s*(\d+)/g,
-    /total_tokens\s*[=:]\s*(\d+)/gi
-  ];
-  for (const pattern of totalPatterns) {
+function findLastNumber(text, patterns) {
+  for (const pattern of patterns) {
     let match;
     let last = null;
     while ((match = pattern.exec(text)) !== null) last = Number(match[1]);
     if (Number.isFinite(last)) return last;
   }
+  return null;
+}
 
-  const inputMatches = [...text.matchAll(/"input_tokens"\s*:\s*(\d+)/g)].map((m) => Number(m[1]));
-  const outputMatches = [...text.matchAll(/"output_tokens"\s*:\s*(\d+)/g)].map((m) => Number(m[1]));
-  if (inputMatches.length && outputMatches.length) {
-    const inLast = inputMatches[inputMatches.length - 1];
-    const outLast = outputMatches[outputMatches.length - 1];
-    if (Number.isFinite(inLast) && Number.isFinite(outLast)) return inLast + outLast;
+function findLastString(text, patterns) {
+  for (const pattern of patterns) {
+    let match;
+    let last = null;
+    while ((match = pattern.exec(text)) !== null) last = String(match[1]).trim();
+    if (last) return last;
   }
   return null;
 }
 
-function readTokenUsage() {
+function parseUsageData(text) {
+  if (!text) return { model: null, input: null, output: null, total: null };
+
+  const model = findLastString(text, [
+    /"model"\s*:\s*"([^"]+)"/g,
+    /"model_name"\s*:\s*"([^"]+)"/g,
+    /"model_slug"\s*:\s*"([^"]+)"/g,
+    /\bmodel\s*[=:]\s*["']?([a-zA-Z0-9._:-]+)["']?/gi
+  ]);
+
+  const input = findLastNumber(text, [
+    /"input_tokens"\s*:\s*(\d+)/g,
+    /"prompt_tokens"\s*:\s*(\d+)/g,
+    /"inputTokenCount"\s*:\s*(\d+)/g,
+    /\binput_tokens\s*[=:]\s*(\d+)/gi
+  ]);
+
+  const output = findLastNumber(text, [
+    /"output_tokens"\s*:\s*(\d+)/g,
+    /"completion_tokens"\s*:\s*(\d+)/g,
+    /"outputTokenCount"\s*:\s*(\d+)/g,
+    /\boutput_tokens\s*[=:]\s*(\d+)/gi
+  ]);
+
+  let total = findLastNumber(text, [
+    /"total_tokens"\s*:\s*(\d+)/g,
+    /"totalTokenCount"\s*:\s*(\d+)/g,
+    /\btotal_tokens\s*[=:]\s*(\d+)/gi
+  ]);
+  if (!Number.isFinite(total) && Number.isFinite(input) && Number.isFinite(output)) {
+    total = input + output;
+  }
+
+  return { model, input, output, total };
+}
+
+function readUsageData() {
   if (!tokenSource) return null;
   const tail = readTail(tokenSource);
-  return parseTokenUsage(tail);
+  return parseUsageData(tail);
 }
 
 function shorten(text, max) {
@@ -207,12 +243,12 @@ function render() {
   const netNow = readNetworkBytes();
   const netRate = Math.max(0, (netNow - prevNet) / elapsed);
   prevNet = netNow;
-  const tokenUsage = readTokenUsage();
+  const usage = readUsageData() || { model: null, input: null, output: null, total: null };
 
-  const left = `󰍛 ${formatPercent(cpu)} ${sparkline(cpuHistory)}  󰘚 ${formatPercent(memUsed)}  󰖟 ${formatRate(netRate)}`;
-  const tokenLabel = tokenUsage == null ? '󰏗 --' : `󰏗 ${tokenUsage.toLocaleString()}`;
-  const sourceLabel = tokenSource ? path.basename(tokenSource) : 'no-source';
-  const right = `${tokenLabel}  ${SPINNER[spin]} ${sourceLabel}`;
+  const left = `CPU ${formatPercent(cpu)} ${sparkline(cpuHistory)}  MEM ${formatPercent(memUsed)}  NET ${formatRate(netRate)}`;
+  const modelLabel = `MODEL ${shorten(usage.model || '--', 26)}`;
+  const tokenLabel = `TOK I ${usage.input == null ? '--' : usage.input.toLocaleString()} O ${usage.output == null ? '--' : usage.output.toLocaleString()} T ${usage.total == null ? '--' : usage.total.toLocaleString()}`;
+  const right = `${modelLabel}  ${tokenLabel}  ${SPINNER[spin]}`;
   const line = `${left}  |  ${right}`;
 
   if (!process.stdout.isTTY) {
