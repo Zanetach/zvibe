@@ -4,8 +4,11 @@ const path = require('path');
 const { run, commandExists } = require('../core/process');
 const { ZvibeError, ERRORS } = require('../core/errors');
 
-function sessionName(targetDir) {
-  return targetDir.split('/').filter(Boolean).pop().replace(/[^a-zA-Z0-9_-]/g, '-');
+function sessionName(targetDir, sessionTag = '') {
+  const base = targetDir.split('/').filter(Boolean).pop().replace(/[^a-zA-Z0-9_-]/g, '-');
+  const tag = String(sessionTag || '').trim().replace(/[^a-zA-Z0-9_-]/g, '-');
+  if (!tag) return base;
+  return `${base}-${tag}`;
 }
 
 function preflight() {
@@ -66,21 +69,27 @@ function applyPaneFrames() {
   run('zellij', ['options', '--pane-frames', 'true'], { capture: true });
 }
 
-function launch({ targetDir, commands, freshSession = false }) {
+function launch({ targetDir, commands, freshSession = false, sessionTag = '' }) {
   preflight();
-  const name = `zvibe-${sessionName(targetDir)}`;
+  const name = `zvibe-${sessionName(targetDir, sessionTag)}`;
   const layoutFile = writeLayout(targetDir, commands);
 
   try {
     const inZellij = !!process.env.ZELLIJ;
-    const existing = !inZellij ? listSessions() : [];
-    if (!inZellij && existing.includes(name)) {
-      if (freshSession) {
+    const existing = listSessions();
+    if (existing.includes(name)) {
+      if (freshSession && !inZellij) {
         mustRun('zellij', ['delete-session', '--force', name], '请检查 zellij 会话状态', { capture: true });
       } else {
         const attachResult = run('zellij', ['attach', name], { capture: false });
         if (attachResult.ok) return;
-        mustRun('zellij', ['delete-session', '--force', name], '请检查 zellij 会话状态', { capture: true });
+        if (!inZellij) {
+          mustRun('zellij', ['delete-session', '--force', name], '请检查 zellij 会话状态', { capture: true });
+        } else {
+          // When already inside zellij, attaching another session is often unsupported.
+          // Avoid spawning duplicate agent panes; keep the existing session as-is.
+          return;
+        }
       }
     }
 

@@ -70,6 +70,26 @@ function withPassthrough(baseCommand, passthroughArgs) {
   return `${baseCommand} ${passthroughArgs.map(shellQuoteArg).join(' ')}`;
 }
 
+function withAgentEnv(agent, command) {
+  const codexVars = ['CODEX_CI', 'CODEX_MANAGED_BY_NPM', 'CODEX_SANDBOX', 'CODEX_SANDBOX_NETWORK_DISABLED', 'CODEX_THREAD_ID'];
+  const unsetVars = ['CLAUDECODE'];
+
+  if (agent === 'claude' || agent === 'opencode') {
+    unsetVars.push(...codexVars);
+  }
+
+  const envPrefix = unsetVars.length > 0
+    ? `env ${unsetVars.map((name) => `-u ${name}`).join(' ')} `
+    : '';
+
+  return `${envPrefix}ZVIBE_AGENT=${agent} ${command}`;
+}
+
+function buildAgentCommand(agent, passthroughArgs = []) {
+  const base = withPassthrough(agentCommand(agent), passthroughArgs);
+  return withAgentEnv(agent, base);
+}
+
 async function ask(question, fallback) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const answer = await new Promise((resolve) => rl.question(`${question} `, resolve));
@@ -667,19 +687,22 @@ function cmdRun(positional, flags, output) {
     .concat(parsed.agentArgs || [])
     .concat(flags.doubleDashArgs || []);
   const primaryAgent = codeMode
-    ? agentCommand(config.agentPair[0])
-    : withPassthrough(agentCommand(mode), passthroughArgs);
-  const secondaryAgent = codeMode ? agentCommand(config.agentPair[1]) : '';
+    ? buildAgentCommand(config.agentPair[0])
+    : buildAgentCommand(mode, passthroughArgs);
+  const secondaryAgent = codeMode ? buildAgentCommand(config.agentPair[1]) : '';
   const commands = {
     leftTop: 'yazi',
     leftBottom: 'keifu',
     rightTop: primaryAgent,
     rightBottom: codeMode ? secondaryAgent : (config.rightTerminal ? 'true' : '')
   };
+  const sessionTag = codeMode
+    ? `code-${config.agentPair[0]}-${config.agentPair[1]}`
+    : mode;
 
   autoGitInit(targetDir, config, output);
   const backend = selectBackend(config.backend, output);
-  zellijBackend.launch({ targetDir, commands, freshSession: !!flags.freshSession });
+  zellijBackend.launch({ targetDir, commands, freshSession: !!flags.freshSession, sessionTag });
 
   commandSummary({ ok: true, command: 'run', backend, mode, targetDir }, output);
 }
