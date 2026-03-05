@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 
 const TICK_MS = 1000;
 const RESCAN_EVERY = 8;
-const WEATHER_RESCAN_EVERY = 900;
+const WEATHER_RESCAN_EVERY = 300;
 const SPINNER = ['|', '/', '-', '\\'];
 const CPU_BARS = '▁▂▃▄▅▆▇█';
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
@@ -27,16 +27,16 @@ const ICONS = {
   quote: '󰃧'
 };
 const FUN_QUOTES = [
-  'Ship small, ship often.',
-  'Bug today, brag tomorrow.',
-  'Keep calm and git commit.',
-  'Write tests, fear less.',
-  'Coffee in, features out.',
-  'No panic, just patch.',
-  'One more run, then done.',
-  'Make it work, then wow.',
-  'Done beats perfect.',
-  'Refactor with mercy.'
+  '今天不卷，明天也强。',
+  '先跑起来，再变优雅。',
+  '这个 bug 很会藏，但我更会找。',
+  '写代码像做菜，火候最重要。',
+  '提交一小步，快乐一大步。',
+  '不怕慢，就怕没 commit。',
+  '别慌，先看日志。',
+  '写完就测，心里不怯。',
+  '修完这个，就去喝水。',
+  '稳住，我们能赢。'
 ];
 
 let spin = 0;
@@ -50,7 +50,7 @@ let usageState = { model: null, input: null, output: null, total: null, context:
 let gpuState = { model: null, util: 0, raw: null, source: 'fallback' };
 let prevTokenSnapshot = { input: null, output: null, total: null };
 let extraState = { load1: null, diskUsed: null, battery: null, charging: null };
-let weatherState = { text: null };
+let weatherState = { text: null, symbol: null };
 
 function supportsColor() {
   return process.stdout.isTTY && !process.env.NO_COLOR;
@@ -540,8 +540,8 @@ function readWeather() {
   const encodedLocation = location ? encodeURIComponent(location) : '';
   // Default mode uses current public location from wttr (IP-based).
   const target = encodedLocation
-    ? `https://wttr.in/${encodedLocation}?format=%l:+%C+%t`
-    : 'https://wttr.in/?format=%l:+%C+%t';
+    ? `https://wttr.in/${encodedLocation}?format=%l|%c|%C|%t`
+    : 'https://wttr.in/?format=%l|%c|%C|%t';
   const safeUrl = target.replace(/(["\\$`])/g, '\\$1');
   try {
     const out = execSync(`curl -fsS --max-time 2 "${safeUrl}"`, {
@@ -549,11 +549,16 @@ function readWeather() {
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 2500
     }).trim();
-    if (!out) return { text: null };
-    const cleaned = out.replace(/\s+/g, ' ').trim();
-    return { text: cleaned };
+    if (!out) return { text: null, symbol: null };
+    const [locRaw, symbolRaw, condRaw, tempRaw] = out.split('|');
+    const loc = String(locRaw || '').replace(/\s+/g, ' ').trim();
+    const symbol = String(symbolRaw || '').replace(/\s+/g, '').trim();
+    const cond = String(condRaw || '').replace(/\s+/g, ' ').trim();
+    const temp = String(tempRaw || '').replace(/\s+/g, ' ').trim();
+    const text = [loc, cond, temp].filter(Boolean).join(' ');
+    return { text: text || null, symbol: symbol || null };
   } catch {
-    return { text: null };
+    return { text: null, symbol: null };
   }
 }
 
@@ -730,15 +735,16 @@ function render() {
 
   const quoteIdx = Math.floor(tick / 8) % FUN_QUOTES.length;
   const quoteText = FUN_QUOTES[quoteIdx];
-  const quoteColor = color(shorten(quoteText, 26), 255, 203, 107);
-  const weatherText = weatherState.text ? color(shorten(weatherState.text, 20), 110, 214, 250) : dim('--');
+  const quoteColor = color(shorten(quoteText, 18), 255, 203, 107);
+  const weatherText = weatherState.text ? color(shorten(weatherState.text, 18), 110, 214, 250) : dim('--');
+  const weatherIcon = weatherState.symbol || ICONS.weather;
   const hypeText = colorByPercent(activityScore, `${activityScore}%`);
   const rightFields = [
     `⏱${ICON_VALUE_GAP}${formatUptimeCompact(uptime)}`,
     `LA${ICON_VALUE_GAP}${loadValue}`,
     `💽${ICON_VALUE_GAP}${diskValue}`,
     `🔋${ICON_VALUE_GAP}${battText}`,
-    `${ICONS.weather}${ICON_VALUE_GAP}${weatherText}`,
+    `${weatherIcon}${ICON_VALUE_GAP}${weatherText}`,
     `${ICONS.hype}${ICON_VALUE_GAP}${hypeText}${ICON_VALUE_GAP}${color(sparkline(activityHistory), 255, 165, 80)}`,
     `${ICONS.quote}${ICON_VALUE_GAP}${quoteColor}`,
     SPINNER[spin]
@@ -752,7 +758,8 @@ function render() {
   ];
   const rightMinimalFields = [
     `⏱${ICON_VALUE_GAP}${formatUptimeCompact(uptime)}`,
-    `${ICONS.weather}${ICON_VALUE_GAP}${weatherText}`,
+    `${weatherIcon}${ICON_VALUE_GAP}${weatherText}`,
+    `${ICONS.quote}${ICON_VALUE_GAP}${quoteColor}`,
     SPINNER[spin]
   ];
   const right = (max < 115 ? rightMinimalFields : (max < 145 ? rightCompactFields : rightFields)).join(FIELD_GAP);
