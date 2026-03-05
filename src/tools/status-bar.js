@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 
 const TICK_MS = 1000;
 const RESCAN_EVERY = 8;
-const WEATHER_RESCAN_EVERY = 300;
+const WEATHER_RESCAN_EVERY = 15;
 const PING_RESCAN_EVERY = 8;
 const SPINNER = ['|', '/', '-', '\\'];
 const CPU_BARS = '▁▂▃▄▅▆▇█';
@@ -624,7 +624,7 @@ function readWeather() {
     const text = [loc, cond, temp].filter(Boolean).join(' ');
     return { text: text || 'Weather pending', symbol: symbol || '☁️' };
   } catch {
-    return { text: weatherState.text || 'Weather unavailable', symbol: weatherState.symbol || '☁️' };
+    return { text: 'Weather unavailable', symbol: '☁️' };
   }
 }
 
