@@ -1,97 +1,76 @@
 # zvibe
 
-Zvibe 是一个会话优先的终端 Vibe Coding Agent 管理工具，围绕 zellij 提供统一命令来启动、会话复用、切换和清理编码会话，并把多 Agent 协作、参数透传、工作区布局和日常开发入口整合成一套轻量高效的工作流。
+Zvibe is a session-first terminal workspace launcher for vibe coding on top of zellij.
+Zvibe 是一个基于 zellij 的会话优先终端工作台启动器。
 
-## 插件用途
+## Core Capabilities / 核心能力
 
-- 快速启动标准化开发面板（文件 / commit / agent）
-- 一键切换单 Agent 与双 Agent（Agent Mode）
-- 用统一命令管理后端、配置、诊断和更新
-- Agent会话管理，基于zellij（tmnux）
+- Multi-agent launch: `codex` / `claude` / `opencode`
+- 双 Agent 模式：`zvibe code`
+- Terminal-only mode: `zvibe terminal` or `zvibe -t`
+- Session management: list / attach / kill
+- Live bottom monitor bar: CPU / GPU / MEM / NET / MODEL / TOK / CTX / COST
+- Config and ops commands: `setup` / `config` / `status` / `update`
 
-## 核心能力
+## Install / 安装
 
-- 多 Agent 启动：`codex` / `claude` / `opencode`
-- Agent Mode：`zvibe code` 同时启动两个 Agent
-- 终端面板组合：左上文件、左下 commit、右侧 Agent
-- 可选右下 Terminal：`-t, --terminal`（单 Agent 模式）
-- 后端策略：`zellij`
-- 自动 Git 初始化防呆：在 `HOME`/根目录自动跳过，避免误初始化
-- 配置管理与运维命令：`setup` / `config` / `status` / `update`
-- Session 管理：`session list` / `session attach <name>` / `session kill <name>`
-- Session 快捷参数：`session -l` / `session -a <name>` / `session -k <name>`
-- JSON 输出能力：`--json`（便于脚本集成）
-
-## 安装说明
-
-### 方式 1：全局安装
+### Global install / 全局安装
 
 ```bash
 npm i -g @zanetach/zvibe
 ```
 
-### 方式 2：临时执行
+### Temporary run / 临时执行
 
 ```bash
 npx @zanetach/zvibe setup
 ```
 
-### 离线安装（从 GitHub Release 下载）
-
-Release 页面：
-`https://github.com/Zanetach/zvibe-kits/releases/tag/v2.0.0`
-
-下载安装包并安装：
+### Local package install / 本地打包安装
 
 ```bash
-curl -L -o zvibe-2.0.0.tgz https://github.com/Zanetach/zvibe-kits/releases/download/v2.0.0/zvibe-2.0.0.tgz
-npm i -g ./zvibe-2.0.0.tgz
+npm pack
+npm i -g ./zanetach-zvibe-<version>.tgz
 ```
 
-### 初始化建议
+## Quick Start / 快速开始
 
 ```bash
 zvibe setup
 zvibe status --doctor
 ```
 
-### setup 一条龙行为
-
-- `zvibe setup`：自动检测并安装缺失依赖，然后进入 Agent 交互配置；同时覆盖插件配置模板
-- `zvibe setup --no-repair`：自动检测并安装缺失依赖，然后进入 Agent 交互配置；不覆盖已存在插件配置
-- `zvibe setup --repair`：强制修复（覆盖）插件配置模板
-
-## 使用方法
-
-### 常用启动命令
+## Run Modes / 启动模式
 
 ```bash
 zvibe
 zvibe codex|claude|opencode
-zvibe claude [agent-args...]
-zvibe codex [agent-args...]
-zvibe claude -p [agent-args...]
-zvibe claude -- [agent-args...]
 zvibe code
-zvibe code -t
-zvibe <dir> [codex|claude|opencode|code]
-zvibe [codex|claude|opencode|code] <dir>
+zvibe terminal
+zvibe -t
+zvibe <dir> [codex|claude|opencode|code|terminal]
+zvibe [codex|claude|opencode|code|terminal] <dir>
+zvibe <agent> -p <agent args...>
+zvibe <agent> -- <agent args...>
 ```
 
-### 关键参数
+### `-t, --terminal` behavior / 参数语义
 
-- `--backend zellij`：后端配置（当前仅支持 zellij）
-- 默认：同目录会话已存在时优先 attach；attach 失败再清理并重建
-- `--fresh-session`：同目录会话存在时强制删除并重建
-- `--reuse-session`：兼容参数（当前默认已是优先 attach）
-- `-p, --passthrough`：将后续参数全部透传给 Agent（等价 `--` 分隔）
-- `-t, --terminal`：单 Agent 模式下在右侧增加 Terminal
-- `--no-repair`：`setup` 时不覆盖已有插件配置
-- `--json`：JSON 结构化输出
-- `--verbose`：输出诊断细节
-- 说明：在 `codex|claude|opencode` 之后追加的参数会原样透传给对应 Agent CLI；使用 `-p` 或 `--` 可强制把后续参数全部透传
+- `zvibe -t` (no explicit agent): starts terminal-only minimal layout
+- `zvibe codex -t`: keeps agent mode and adds right terminal pane
+- `zvibe code -t`: still runs dual-agent mode (no extra terminal pane)
 
-### 配置命令
+## Commands / 命令
+
+### Setup / 初始化
+
+```bash
+zvibe setup
+zvibe setup --repair
+zvibe setup --no-repair
+```
+
+### Config / 配置
 
 ```bash
 zvibe config wizard
@@ -99,6 +78,14 @@ zvibe config get <key>
 zvibe config set <key> <value>
 zvibe config validate
 zvibe config explain
+```
+
+### Status / Update / Session
+
+```bash
+zvibe status
+zvibe status --doctor
+zvibe update
 zvibe session list
 zvibe session attach <name>
 zvibe session kill <name>
@@ -107,12 +94,22 @@ zvibe session -a <name>
 zvibe session -k <name>
 ```
 
-### 配置文件路径
+## Global Flags / 全局参数
 
-- 默认：`~/.config/zvibe/config.json`
-- 兼容读取旧路径：`~/.config/vibe/config.json`
+- `--backend zellij`: zellij backend only / 当前仅支持 zellij
+- `--fresh-session`: force rebuild existing session / 强制重建当前目录会话
+- `--reuse-session`: compatibility flag (attach-first is default) / 兼容参数
+- `-p, --passthrough`: pass remaining args to agent / 透传参数给 agent
+- `-t, --terminal`: terminal-only when standalone, or right terminal pane in explicit agent mode
+- `--json`: JSON output
+- `--verbose`: verbose diagnostics
 
-示例配置：
+## Config File / 配置文件
+
+- Default path: `~/.config/zvibe/config.json`
+- Legacy read path: `~/.config/vibe/config.json`
+
+Example:
 
 ```json
 {
@@ -121,43 +118,81 @@ zvibe session -k <name>
   "backend": "zellij",
   "fallback": true,
   "rightTerminal": false,
-  "autoGitInit": true
+  "autoGitInit": true,
+  "initialized": true
 }
 ```
 
-## 界面截图
+## Full Test Checklist / 全功能测试清单
 
-### 单 Agent 模式（左侧 files/commit + 右侧 agent）
-
-![单 Agent 模式](docs/screenshots/layout-single-agent.png)
-
-### 单 Agent + Terminal（右下 terminal）
-
-![单 Agent + Terminal](docs/screenshots/layout-with-terminal.png)
-
-### Agent Mode（`zvibe code`，右侧双 Agent 50/50）
-
-![Agent Mode 双 Agent](docs/screenshots/layout-code-mode.png)
-
-## 开发
+### 1) CLI and help / 命令与帮助
 
 ```bash
-git clone https://github.com/Zanetach/zvibe.git
-cd zvibe
-node src/cli.js --help
+zvibe --help
+zvibe help
+zvibe --json status
 ```
 
-发布前校验（防止“安装后不能用”）：
+Expect / 预期:
+- Help shows bilingual command descriptions
+- `terminal` mode appears in run commands
+
+### 2) Setup and config / 初始化与配置
+
+```bash
+zvibe setup --repair
+zvibe config validate
+zvibe config explain
+zvibe config get defaultAgent
+zvibe config set defaultAgent codex
+```
+
+### 3) Run modes / 启动模式
+
+```bash
+zvibe --fresh-session
+zvibe codex --fresh-session
+zvibe code --fresh-session
+zvibe terminal --fresh-session
+zvibe -t --fresh-session
+```
+
+Expect / 预期:
+- `terminal` or standalone `-t`: one clean terminal pane + bottom monitor only
+- `codex|claude|opencode`: normal agent workspace layout
+- `code`: dual-agent layout
+
+### 4) Session ops / 会话管理
+
+```bash
+zvibe session list
+zvibe session attach <name>
+zvibe session kill <name>
+```
+
+### 5) Monitor bar / 监控栏
+
+Expect / 预期:
+- Bottom monitor updates live
+- Metrics include CPU/GPU/MEM/NET in/out + model/token/context/cost (if source available)
+- Colors change by threshold and trend
+
+### 6) Packaging / 打包
 
 ```bash
 npm run verify:bin
 npm pack
 ```
 
-说明：
-- `verify:bin` 会模拟 npm 全局安装时的 `bin` 符号链接场景并执行 `zvibe --help`
-- `npm pack` 会触发 `prepack`，若启动器路径解析有问题会直接失败
+## Development / 开发
 
-## 许可证
+```bash
+git clone https://github.com/Zanetach/zvibe.git
+cd zvibe
+node src/cli.js --help
+npm run verify:bin
+```
+
+## License / 许可证
 
 MIT
