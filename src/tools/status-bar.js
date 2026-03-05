@@ -94,6 +94,14 @@ function colorByCost(value, text) {
   return color(text, 229, 78, 78);
 }
 
+function colorBySig(level, text) {
+  if (level === 'CRIT') return color(text, 229, 78, 78);
+  if (level === 'WARN') return color(text, 236, 138, 69);
+  if (level === 'LIVE') return color(text, 91, 179, 255);
+  if (level === 'IDLE') return dim(text);
+  return dim(text);
+}
+
 function readCpuSnapshot() {
   const cpus = os.cpus();
   let idle = 0;
@@ -159,6 +167,13 @@ function formatCompactNumber(value) {
   if (abs >= 1e6) return `${(value / 1e6).toFixed(1)}m`;
   if (abs >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
   return String(Math.round(value));
+}
+
+function formatTps(value) {
+  if (!Number.isFinite(value) || value < 0) return '--';
+  if (value >= 100) return value.toFixed(0);
+  if (value >= 10) return value.toFixed(1);
+  return value.toFixed(2);
 }
 
 function formatPercent(v) {
@@ -547,6 +562,17 @@ function formatUptimeCompact(seconds) {
   return `${m}m`;
 }
 
+function formatEtaCompact(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '--';
+  const s = Math.floor(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${h}h${String(mm).padStart(2, '0')}m`;
+}
+
 function safeUptimeSeconds() {
   try {
     const up = os.uptime();
@@ -635,6 +661,9 @@ function render() {
   const deltaTotal = Number.isFinite(usageState.total) && Number.isFinite(prevTokenSnapshot.total)
     ? usageState.total - prevTokenSnapshot.total
     : NaN;
+  const deltaInPerSec = Number.isFinite(deltaIn) ? Math.max(0, deltaIn / elapsed) : NaN;
+  const deltaOutPerSec = Number.isFinite(deltaOut) ? Math.max(0, deltaOut / elapsed) : NaN;
+  const deltaTotalPerSec = Number.isFinite(deltaTotal) ? Math.max(0, deltaTotal / elapsed) : NaN;
   const tokenPulse = Math.max(0, Number.isFinite(deltaTotal) ? deltaTotal : 0);
   const activityScore = Math.max(0, Math.min(100, Math.round((cpu * 0.5) + (gpuPct * 0.2) + Math.min(100, tokenPulse / 20))));
   activityHistory.push(activityScore);
@@ -649,6 +678,26 @@ function render() {
   const tokTotalText = usageState.total == null ? dim('--') : colorByTokenDelta(deltaTotal, formatCompactNumber(usageState.total));
   const ctxValue = usageState.context == null ? dim('--') : color(formatCompactNumber(usageState.context), 176, 132, 255);
   const costValue = usageState.cost == null ? dim('--') : colorByCost(usageState.cost, `$${usageState.cost.toFixed(4)}`);
+  const tpsInText = Number.isFinite(deltaInPerSec) ? colorByTokenDelta(deltaIn, formatTps(deltaInPerSec)) : dim('--');
+  const tpsOutText = Number.isFinite(deltaOutPerSec) ? colorByTokenDelta(deltaOut, formatTps(deltaOutPerSec)) : dim('--');
+  const tpsTotalText = Number.isFinite(deltaTotalPerSec) ? colorByTokenDelta(deltaTotal, formatTps(deltaTotalPerSec)) : dim('--');
+  const ctxRemaining = (Number.isFinite(usageState.context) && Number.isFinite(usageState.total))
+    ? Math.max(0, usageState.context - usageState.total)
+    : NaN;
+  const etaText = (Number.isFinite(ctxRemaining) && Number.isFinite(deltaTotalPerSec) && deltaTotalPerSec > 0)
+    ? color(formatEtaCompact(ctxRemaining / deltaTotalPerSec), 196, 160, 255)
+    : dim('--');
+  const sigLevel = (() => {
+    if (!usageState.model) return '--';
+    if (Number.isFinite(usageState.context) && Number.isFinite(usageState.total)) {
+      const ctxPct = usageState.total / Math.max(1, usageState.context);
+      if (ctxPct >= 0.9) return 'CRIT';
+      if (ctxPct >= 0.75) return 'WARN';
+    }
+    if (Number.isFinite(deltaTotal) && deltaTotal > 0) return 'LIVE';
+    return 'IDLE';
+  })();
+  const sigText = colorBySig(sigLevel, sigLevel);
   const loadValue = extraState.load1 == null ? dim('--') : colorByPercent(Math.min(100, (extraState.load1 / Math.max(1, os.cpus().length)) * 100), extraState.load1.toFixed(2));
   const diskValue = extraState.diskUsed == null ? dim('--') : colorByPercent(extraState.diskUsed, `${extraState.diskUsed}%`);
   const battPct = extraState.battery == null ? '--' : `${extraState.battery}%`;
@@ -666,9 +715,9 @@ function render() {
   ];
   const left = leftFields.join(FIELD_GAP);
 
-  const modelLabel = `${ICONS.model}${ICON_VALUE_GAP}${color(shorten(usageState.model || '--', 16), 120, 175, 255)}`;
-  const tokenLabel = `${ICONS.tok}${ICON_VALUE_GAP}I ${tokInText}${ICON_VALUE_GAP}O ${tokOutText}${ICON_VALUE_GAP}T ${tokTotalText}`;
-  const ctxCostLabel = `${ICONS.ctx}${ICON_VALUE_GAP}${ctxValue}${FIELD_GAP}${ICONS.cost}${ICON_VALUE_GAP}${costValue}`;
+  const modelLabel = `${ICONS.model}${ICON_VALUE_GAP}${color(shorten(usageState.model || '--', 16), 120, 175, 255)}${ICON_VALUE_GAP}SIG ${sigText}`;
+  const tokenLabel = `${ICONS.tok}${ICON_VALUE_GAP}I ${tokInText}${ICON_VALUE_GAP}O ${tokOutText}${ICON_VALUE_GAP}T ${tokTotalText}${ICON_VALUE_GAP}TPS ${tpsInText}/${tpsOutText}/${tpsTotalText}`;
+  const ctxCostLabel = `${ICONS.ctx}${ICON_VALUE_GAP}${ctxValue}${ICON_VALUE_GAP}ETA ${etaText}${FIELD_GAP}${ICONS.cost}${ICON_VALUE_GAP}${costValue}`;
   const middle = [modelLabel, tokenLabel, ctxCostLabel].join(FIELD_GAP);
 
   const quoteIdx = Math.floor(tick / 8) % FUN_QUOTES.length;
