@@ -1,0 +1,23 @@
+{
+  "name": "zvibe-kits-video",
+  "version": "1.0.0",
+  "description": "Promotional video for zvibe-kits",
+  "scripts": {
+    "start": "npx remotion studio",
+    "render": "npx remotion render ZvibeVideo out/video.mp4",
+    "build": "npx remotion render ZvibeVideo out/video.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.0",
+    "@remotion/transitions": "^4.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}

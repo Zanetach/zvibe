@@ -1,6 +1,6 @@
 {
   "name": "@zanetach/zvibe",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "zvibe - session-first multi-agent development workspace launcher (zellij backend)",
   "scripts": {
     "verify:bin": "bash scripts/verify-bin.sh",

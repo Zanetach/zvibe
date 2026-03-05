@@ -123,9 +123,16 @@ function listSessions() {
   preflight();
   const result = run('zellij', ['list-sessions', '--no-formatting', '--short'], { capture: true });
   if (!result.ok) {
+    const combined = `${result.stdout || ''}\n${result.stderr || ''}`.toLowerCase();
+    // zellij exits with code 1 when there are no active sessions.
+    if (result.code === 1 && combined.includes('no active zellij sessions found')) {
+      return [];
+    }
     throw new ZvibeError(ERRORS.RUN_FAILED, 'zellij 会话列表读取失败', '请检查 zellij 状态后重试', result.stderr || result.stdout);
   }
-  return result.stdout
+  // Also check stderr for output (some versions of zellij output to stderr even on success)
+  const output = result.stdout || result.stderr || '';
+  return output
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line && line.startsWith('zvibe-'));
