@@ -84,8 +84,10 @@ function mustRun(command, args, hint, options = {}) {
 }
 
 function applyPaneFrames() {
+  const mouseMode = String(process.env.ZVIBE_ZELLIJ_MOUSE_MODE || 'false').trim().toLowerCase();
+  const enableMouseMode = ['1', 'true', 'yes', 'on'].includes(mouseMode);
   run('zellij', ['options', '--pane-frames', 'false'], { capture: true });
-  run('zellij', ['options', '--mouse-mode', 'true'], { capture: true });
+  run('zellij', ['options', '--mouse-mode', enableMouseMode ? 'true' : 'false'], { capture: true });
 }
 
 function ensureInteractiveInputMode() {

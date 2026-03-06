@@ -232,6 +232,7 @@ zvibe config set codexArgs '["--dangerously-skip-permissions","--model","gpt-5"]
 export ZVIBE_ICON_SET=ascii    # ASCII 字符
 export ZVIBE_ICON_SET=unicode  # Unicode 符号
 export ZVIBE_ICON_SET=nerd     # Nerd Font（默认）
+export ZVIBE_ZELLIJ_MOUSE_MODE=true   # 可选：开启 zellij 鼠标模式（默认关闭，避免滚轮干扰 commit pane）
 ```
 
 ---
