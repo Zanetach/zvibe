@@ -34,17 +34,51 @@ function escapeKdl(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function paneKdl(targetDir, command, paneName, size = null) {
+function paneKdl(targetDir, command, paneName, size = null, { borderless = false } = {}) {
   const shell = process.env.SHELL || '/bin/zsh';
   const cmd = shellWrap(targetDir, command);
   const sizeAttr = size ? ` size="${escapeKdl(size)}"` : '';
-  return `pane name="${escapeKdl(paneName)}"${sizeAttr} borderless=true command="${escapeKdl(shell)}" {\n        args "-lc" "${escapeKdl(cmd)}"\n      }`;
+  const borderlessAttr = borderless ? ' borderless=true' : '';
+  return `pane name="${escapeKdl(paneName)}"${sizeAttr}${borderlessAttr} command="${escapeKdl(shell)}" {\n        args "-lc" "${escapeKdl(cmd)}"\n      }`;
 }
 
-function buildLayout(targetDir, commands) {
+function computeLayoutProfile(viewport = {}, commands = {}) {
+  const cols = Number.isFinite(viewport.columns) ? viewport.columns : 160;
+  const rows = Number.isFinite(viewport.rows) ? viewport.rows : 48;
+  const rightBottomIsTerminal = commands.rightBottom === 'true';
+
+  let leftColumn = 45;
+  if (cols >= 220) leftColumn = 42;
+  else if (cols >= 180) leftColumn = 43;
+  else if (cols >= 150) leftColumn = 40;
+  else if (cols >= 125) leftColumn = 36;
+  else leftColumn = 32;
+
+  let leftTop = 60;
+  if (rows < 36) leftTop = 52;
+  else if (rows > 58) leftTop = 64;
+
+  let rightTop = rightBottomIsTerminal ? 70 : 50;
+  if (cols < 130) rightTop = rightBottomIsTerminal ? 68 : 55;
+  if (rows < 36) rightTop = Math.max(58, rightTop - 5);
+
+  return {
+    mainSize: 94,
+    statusSize: 3,
+    leftColumnSize: leftColumn,
+    leftTopSize: leftTop,
+    leftBottomSize: 100 - leftTop,
+    rightColumnSize: 100 - leftColumn,
+    rightTopSize: rightTop,
+    rightBottomSize: 100 - rightTop
+  };
+}
+
+function buildLayout(targetDir, commands, viewport = {}) {
   const panePrefix = 'zvibe';
   const minimalTerminal = !!commands.minimalTerminal;
-  const statusBar = paneKdl(targetDir, commands.statusBar || 'true', `${panePrefix}:state`, '3');
+  const profile = computeLayoutProfile(viewport, commands);
+  const statusBar = paneKdl(targetDir, commands.statusBar || 'true', `${panePrefix}:state`, '3', { borderless: false });
   const rightTopRole = commands.rightTopRole || 'agent';
   const rightTop = paneKdl(targetDir, commands.rightTop, `${panePrefix}:${rightTopRole}`);
 
@@ -55,20 +89,20 @@ function buildLayout(targetDir, commands) {
   const leftTop = paneKdl(targetDir, commands.leftTop, `${panePrefix}:project`, '60%');
   const leftBottom = paneKdl(targetDir, commands.leftBottom, `${panePrefix}:commit`, '40%');
   const rightBottomIsTerminal = commands.rightBottom === 'true';
-  const rightTopSize = rightBottomIsTerminal ? '70%' : '50%';
-  const rightBottomSize = rightBottomIsTerminal ? '30%' : '50%';
+  const rightTopSize = `${profile.rightTopSize}%`;
+  const rightBottomSize = `${profile.rightBottomSize}%`;
   const rightTopSized = paneKdl(targetDir, commands.rightTop, `${panePrefix}:${rightTopRole}`, rightTopSize);
 
   if (!commands.rightBottom) {
-    return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" split_direction="Vertical" {\n      pane size="45%" split_direction="Horizontal" {\n        ${leftTop}\n        ${leftBottom}\n      }\n      pane size="55%" {\n        ${rightTopSized}\n      }\n    }\n    ${statusBar}\n  }\n}\n`;
+    return `layout {\n  pane split_direction="Horizontal" {\n    pane size="${profile.mainSize}%" split_direction="Vertical" {\n      pane size="${profile.leftColumnSize}%" split_direction="Horizontal" {\n        ${paneKdl(targetDir, commands.leftTop, `${panePrefix}:project`, `${profile.leftTopSize}%`)}\n        ${paneKdl(targetDir, commands.leftBottom, `${panePrefix}:commit`, `${profile.leftBottomSize}%`)}\n      }\n      pane size="${profile.rightColumnSize}%" {\n        ${rightTopSized}\n      }\n    }\n    ${paneKdl(targetDir, commands.statusBar || 'true', `${panePrefix}:state`, `${profile.statusSize}`, { borderless: false })}\n  }\n}\n`;
   }
   const rightBottom = paneKdl(targetDir, commands.rightBottom, `${panePrefix}:${rightBottomIsTerminal ? 'terminal' : 'agent'}`, rightBottomSize);
-  return `layout {\n  pane split_direction="Horizontal" {\n    pane size="94%" split_direction="Vertical" {\n      pane size="45%" split_direction="Horizontal" {\n        ${leftTop}\n        ${leftBottom}\n      }\n      pane size="55%" split_direction="Horizontal" {\n        ${rightTopSized}\n        ${rightBottom}\n      }\n    }\n    ${statusBar}\n  }\n}\n`;
+  return `layout {\n  pane split_direction="Horizontal" {\n    pane size="${profile.mainSize}%" split_direction="Vertical" {\n      pane size="${profile.leftColumnSize}%" split_direction="Horizontal" {\n        ${paneKdl(targetDir, commands.leftTop, `${panePrefix}:project`, `${profile.leftTopSize}%`)}\n        ${paneKdl(targetDir, commands.leftBottom, `${panePrefix}:commit`, `${profile.leftBottomSize}%`)}\n      }\n      pane size="${profile.rightColumnSize}%" split_direction="Horizontal" {\n        ${rightTopSized}\n        ${rightBottom}\n      }\n    }\n    ${paneKdl(targetDir, commands.statusBar || 'true', `${panePrefix}:state`, `${profile.statusSize}`, { borderless: false })}\n  }\n}\n`;
 }
 
-function writeLayout(targetDir, commands) {
+function writeLayout(targetDir, commands, viewport = {}) {
   const file = path.join(os.tmpdir(), `zvibe-zellij-layout-${process.pid}-${Date.now()}.kdl`);
-  fs.writeFileSync(file, buildLayout(targetDir, commands), 'utf8');
+  fs.writeFileSync(file, buildLayout(targetDir, commands, viewport), 'utf8');
   return file;
 }
 
@@ -86,7 +120,7 @@ function mustRun(command, args, hint, options = {}) {
 function applyPaneFrames() {
   const mouseMode = String(process.env.ZVIBE_ZELLIJ_MOUSE_MODE || 'false').trim().toLowerCase();
   const enableMouseMode = ['1', 'true', 'yes', 'on'].includes(mouseMode);
-  run('zellij', ['options', '--pane-frames', 'false'], { capture: true });
+  run('zellij', ['options', '--pane-frames', 'true'], { capture: true });
   run('zellij', ['options', '--mouse-mode', enableMouseMode ? 'true' : 'false'], { capture: true });
 }
 
@@ -96,10 +130,10 @@ function ensureInteractiveInputMode() {
   run('zellij', ['action', 'switch-mode', 'pane'], { capture: true });
 }
 
-function launch({ targetDir, commands, freshSession = false, sessionTag = '' }) {
+function launch({ targetDir, commands, freshSession = false, sessionTag = '', viewport = {} }) {
   preflight();
   const name = sessionName(targetDir, sessionTag);
-  const layoutFile = writeLayout(targetDir, commands);
+  const layoutFile = writeLayout(targetDir, commands, viewport);
 
   try {
     const inZellij = !!process.env.ZELLIJ;
@@ -231,6 +265,7 @@ module.exports = {
   shellWrap,
   healthcheck,
   sessionName,
+  computeLayoutProfile,
   listSessions,
   killSession,
   attachSession,

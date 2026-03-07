@@ -1528,6 +1528,18 @@ function buildSessionTag({ targetDir, mode, codeMode, agentPair }) {
   return `${modeLabel(mode)}-${suffix}`;
 }
 
+function detectViewport() {
+  const envCols = Number(process.env.COLUMNS || '');
+  const envRows = Number(process.env.LINES || '');
+  const columns = Number.isFinite(process.stdout.columns) && process.stdout.columns > 0
+    ? process.stdout.columns
+    : (Number.isFinite(envCols) && envCols > 0 ? envCols : 160);
+  const rows = Number.isFinite(process.stdout.rows) && process.stdout.rows > 0
+    ? process.stdout.rows
+    : (Number.isFinite(envRows) && envRows > 0 ? envRows : 48);
+  return { columns, rows };
+}
+
 function cmdRun(positional, flags, output) {
   needMacOS();
   const { parsed, config } = resolveRunConfig(positional, flags);
@@ -1571,10 +1583,11 @@ function cmdRun(positional, flags, output) {
     codeMode,
     agentPair: config.agentPair
   });
+  const viewport = detectViewport();
 
   autoGitInit(targetDir, config, output);
   const backend = selectBackend(config.backend, output);
-  zellijBackend.launch({ targetDir, commands, freshSession: !!flags.freshSession, sessionTag });
+  zellijBackend.launch({ targetDir, commands, freshSession: !!flags.freshSession, sessionTag, viewport });
 
   commandSummary({ ok: true, command: 'run', backend, mode, targetDir }, output);
 }
@@ -1655,6 +1668,7 @@ module.exports = {
   parseArgList,
   parseArgv,
   shouldTreatFirstPositionalAsRunTarget,
+  detectViewport,
   getCodexModeToggles,
   applyCodexModeToggles,
   getClaudePermissionToggles,

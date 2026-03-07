@@ -17,6 +17,8 @@ const RESET = '\x1b[0m';
 const ICON_VALUE_GAP = '  ';
 const FIELD_GAP = '   ';
 const EDGE_PADDING = '  ';
+const FRAME_LEFT = '';
+const FRAME_RIGHT = '';
 const NERD_ICONS = {
   cpu: '󰍛',
   gpu: '󰢮',
@@ -80,6 +82,11 @@ let pingState = { ms: null };
 let netRates = { inRate: 0, outRate: 0 };
 let pingCursor = 0;
 let samplerChild = null;
+let pageIndex = 0;
+let pageCount = 1;
+let scrollOffset = 0;
+let scrollable = false;
+let inputBound = false;
 
 function noAgentTelemetryMode() {
   const explicit = String(process.env.ZVIBE_NO_AGENT || '').trim();
@@ -271,6 +278,32 @@ function fillLineToWidth(text, width) {
   return `${value}${' '.repeat(width - len)}`;
 }
 
+function layoutPinnedEdges(left, right, max, minGap = 2) {
+  const gap = ' '.repeat(Math.max(1, minGap));
+  const gapLen = visibleLength(gap);
+  const leftLen = visibleLength(left);
+  const rightLen = visibleLength(right);
+  if (leftLen + gapLen + rightLen <= max) {
+    return `${left}${' '.repeat(max - leftLen - rightLen)}${right}`;
+  }
+  const minRight = Math.max(8, Math.min(26, Math.floor(max * 0.28)));
+  const rightBudget = Math.min(rightLen, Math.max(minRight, Math.floor(max * 0.34)));
+  const rightText = shorten(right, rightBudget);
+  const leftBudget = Math.max(6, max - gapLen - visibleLength(rightText));
+  const leftText = shorten(left, leftBudget);
+  const pad = Math.max(1, max - visibleLength(leftText) - visibleLength(rightText));
+  return `${leftText}${' '.repeat(pad)}${rightText}`;
+}
+
+function miniBar(percent, width, rgb) {
+  if (!Number.isFinite(percent)) return dim('-'.repeat(width));
+  const p = Math.max(0, Math.min(100, percent));
+  const filled = Math.round((p / 100) * width);
+  const fillText = color('━'.repeat(Math.max(0, filled)), rgb[0], rgb[1], rgb[2]);
+  const emptyText = dim('─'.repeat(Math.max(0, width - filled)));
+  return `${fillText}${emptyText}`;
+}
+
 function packFieldsByWidth(fields, maxWidth, gap = FIELD_GAP) {
   if (!Array.isArray(fields) || fields.length === 0 || maxWidth <= 0) return '';
   const out = [];
@@ -284,6 +317,53 @@ function packFieldsByWidth(fields, maxWidth, gap = FIELD_GAP) {
     used += next;
   }
   return out.join(gap);
+}
+
+function paginateFields(fields, maxWidth, gap = FIELD_GAP) {
+  if (!Array.isArray(fields) || fields.length === 0 || maxWidth <= 0) return [''];
+  const pages = [];
+  const gapLen = visibleLength(gap);
+  let cursor = 0;
+
+  while (cursor < fields.length) {
+    const out = [];
+    let used = 0;
+
+    while (cursor < fields.length) {
+      const field = String(fields[cursor] || '');
+      const fieldLen = visibleLength(field);
+      const next = out.length === 0 ? fieldLen : (gapLen + fieldLen);
+      if (used + next > maxWidth) {
+        if (out.length === 0) {
+          out.push(shorten(field, Math.max(6, maxWidth)));
+          cursor += 1;
+        }
+        break;
+      }
+      out.push(field);
+      used += next;
+      cursor += 1;
+    }
+
+    pages.push(out.join(gap));
+  }
+
+  return pages.length ? pages : [''];
+}
+
+function clampPageIndex(next, total) {
+  if (!Number.isFinite(total) || total <= 1) return 0;
+  const maxIdx = total - 1;
+  if (!Number.isFinite(next)) return 0;
+  return Math.max(0, Math.min(maxIdx, next));
+}
+
+function sliceVisible(text, offset, width) {
+  const plain = String(text || '').replace(ANSI_RE, '');
+  const start = Math.max(0, Math.floor(offset || 0));
+  const max = Math.max(0, Math.floor(width || 0));
+  if (max <= 0 || start >= plain.length) return '';
+  return plain.slice(start, Math.min(plain.length, start + max));
 }
 
 function layoutTwoColumns(left, right, max) {
@@ -739,7 +819,7 @@ function formatDateLite(date = new Date()) {
   const mi = String(date.getMinutes()).padStart(2, '0');
   const ss = String(date.getSeconds()).padStart(2, '0');
   const week = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
-  return `${mm}-${dd} ${hh}:${mi}:${ss} ${week}`;
+  return `${mm}-${dd} ${week} ${hh}:${mi}:${ss}`;
 }
 
 function formatDateCompact(date = new Date()) {
@@ -859,10 +939,13 @@ function render() {
   const diskUsedPct = (Number.isFinite(extraState.diskTotalBytes) && Number.isFinite(extraState.diskFreeBytes) && extraState.diskTotalBytes > 0)
     ? Math.max(0, Math.min(100, ((extraState.diskTotalBytes - extraState.diskFreeBytes) / extraState.diskTotalBytes) * 100))
     : NaN;
+  const diskUsedBytes = (Number.isFinite(extraState.diskTotalBytes) && Number.isFinite(extraState.diskFreeBytes))
+    ? Math.max(0, extraState.diskTotalBytes - extraState.diskFreeBytes)
+    : NaN;
   const diskValue = Number.isFinite(extraState.diskTotalBytes)
     ? colorByPercent(
       diskUsedPct,
-      `${formatDiskBytes(extraState.diskTotalBytes)}/${formatDiskBytes(extraState.diskFreeBytes)}`
+      `${formatDiskBytes(diskUsedBytes)}/${formatDiskBytes(extraState.diskTotalBytes)}`
     )
     : dim('--');
   const battPct = extraState.battery == null ? '--' : `${extraState.battery}%`;
@@ -874,10 +957,13 @@ function render() {
   const leftNetField = noAgent
     ? `${ICONS.net}${ICON_VALUE_GAP}↓ ${netInText}${ICON_VALUE_GAP}${ICONS.ping}${ICON_VALUE_GAP}${pingText}`
     : `${ICONS.ping}${ICON_VALUE_GAP}${pingText}${ICON_VALUE_GAP}${ICONS.net}${ICON_VALUE_GAP}↓ ${netInText}${ICON_VALUE_GAP}↑ ${netOutText}`;
+  const cpuBar = miniBar(cpu, 8, [120, 175, 255]);
+  const gpuBar = miniBar(gpuPct, 8, [196, 160, 255]);
+  const memBar = miniBar(memUsed, 8, [97, 191, 103]);
   const leftFields = [
-    `${ICONS.cpu}${ICON_VALUE_GAP}${cpuText}${ICON_VALUE_GAP}${color(sparkline(cpuHistory), 120, 175, 255)}`,
-    `${ICONS.gpu}${ICON_VALUE_GAP}${gpuText}${ICON_VALUE_GAP}${color(sparkline(gpuHistory), 196, 160, 255)}`,
-    `${ICONS.mem}${ICON_VALUE_GAP}${memText}${ICON_VALUE_GAP}${color(sparkline(memHistory), 97, 191, 103)}`,
+    `${ICONS.cpu}${ICON_VALUE_GAP}${cpuText}${ICON_VALUE_GAP}${cpuBar}`,
+    `${ICONS.gpu}${ICON_VALUE_GAP}${gpuText}${ICON_VALUE_GAP}${gpuBar}`,
+    `${ICONS.mem}${ICON_VALUE_GAP}${memText}${ICON_VALUE_GAP}${memBar}`,
     leftNetField
   ];
   const left = leftFields.join(fieldGap);
@@ -916,6 +1002,7 @@ function render() {
   }
 
   let line;
+  let pages = [''];
   if (noAgent) {
     const criticalFields = [
       `${ICONS.cpu}${ICON_VALUE_GAP}${cpuText}`,
@@ -929,7 +1016,7 @@ function render() {
       `${ICONS.cpu}${ICON_VALUE_GAP}${Math.round(cpu)}%`,
       `${ICONS.gpu}${ICON_VALUE_GAP}${gpuPct}%`,
       `${ICONS.mem}${ICON_VALUE_GAP}${Math.round(memUsed)}%`,
-      `${ICONS.disk}${ICON_VALUE_GAP}${Number.isFinite(extraState.diskTotalBytes) ? `${formatDiskBytes(extraState.diskTotalBytes)}/${formatDiskBytes(extraState.diskFreeBytes)}` : '--'}`,
+      `${ICONS.disk}${ICON_VALUE_GAP}${Number.isFinite(extraState.diskTotalBytes) ? `${formatDiskBytes(diskUsedBytes)}/${formatDiskBytes(extraState.diskTotalBytes)}` : '--'}`,
       `${ICONS.net}${ICON_VALUE_GAP}${formatRate(netInRate)}`,
       `${ICONS.ping}${ICON_VALUE_GAP}${pingText}`
     ];
@@ -944,20 +1031,58 @@ function render() {
     const compactGap = '  ';
     const criticalCompactLine = criticalCompactFields.join(compactGap);
     if (visibleLength(criticalFullLine) <= budget) {
-      line = packFieldsByWidth(criticalFields.concat(secondaryFields), budget, fieldGap);
+      pages = paginateFields(criticalFields.concat(secondaryFields), budget, fieldGap);
     } else if (visibleLength(criticalCompactLine) <= budget) {
-      line = packFieldsByWidth(criticalCompactFields.concat(secondaryFields), budget, compactGap);
+      pages = paginateFields(criticalCompactFields.concat(secondaryFields), budget, compactGap);
     } else {
-      line = packFieldsByWidth(criticalCompactFields, budget, ' ');
+      pages = paginateFields(criticalCompactFields, budget, ' ');
     }
-    if (!line) line = dateField;
+    if (!pages.length) pages = [dateField];
   } else {
-    line = layoutThreeColumns(left, middle, right, Math.max(20, max - visibleLength(EDGE_PADDING)));
+    const budget = Math.max(20, max - visibleLength(EDGE_PADDING));
+    const shortModel = `${ICONS.model}${ICON_VALUE_GAP}${color(shorten(usageState.model || '--', max >= 170 ? 18 : 12), 120, 175, 255)}`;
+    const shortTokens = max >= 170
+      ? `${ICONS.tok}${ICON_VALUE_GAP}I ${tokInText}${ICON_VALUE_GAP}O ${tokOutText}${ICON_VALUE_GAP}T ${tokTotalText}`
+      : `${ICONS.tok}${ICON_VALUE_GAP}T ${tokTotalText}`;
+    const shortCtx = `${ICONS.ctx}${ICON_VALUE_GAP}${ctxValue}`;
+    const shortNet = `${ICONS.net}${ICON_VALUE_GAP}↓ ${netInText}${ICON_VALUE_GAP}↑ ${netOutText}`;
+    const shortDate = `${ICONS.date}${ICON_VALUE_GAP}${color(formatDateLite(new Date()), 174, 203, 255)}`;
+
+    const leftCompact = [
+      `${ICONS.cpu}${ICON_VALUE_GAP}${cpuText}${ICON_VALUE_GAP}${cpuBar}`,
+      `${ICONS.gpu}${ICON_VALUE_GAP}${gpuText}${ICON_VALUE_GAP}${gpuBar}`,
+      `${ICONS.mem}${ICON_VALUE_GAP}${memText}${ICON_VALUE_GAP}${memBar}`,
+      `${ICONS.ping}${ICON_VALUE_GAP}${pingText}`,
+      shortNet
+    ];
+    const middleCompact = [shortModel, shortTokens, shortCtx];
+    const rightCompact = [
+      `${ICONS.disk}${ICON_VALUE_GAP}${diskValue}`,
+      `${ICONS.battery}${ICON_VALUE_GAP}${battText}`,
+      `${ICONS.uptime}${ICON_VALUE_GAP}${formatUptimeCompact(uptime)}`,
+      `${ICONS.load}${ICON_VALUE_GAP}${loadValue}`,
+      shortDate
+    ];
+    const orderedFields = leftCompact.concat(middleCompact).concat(rightCompact);
+    pages = paginateFields(orderedFields, budget, fieldGap);
   }
-  const contentWidth = Math.max(10, max - visibleLength(EDGE_PADDING));
-  const fitted = shorten(line, contentWidth);
+
+  if (!pages.length) pages = [''];
+  pageCount = pages.length;
+  pageIndex = clampPageIndex(pageIndex, pageCount);
+  line = pages[pageIndex] || '';
+
+  const frameWidth = visibleLength(FRAME_LEFT) + visibleLength(FRAME_RIGHT);
+  const contentWidth = Math.max(10, max - visibleLength(EDGE_PADDING) - frameWidth);
+  const pageTag = pageCount > 1 ? dim(` [${pageIndex + 1}/${pageCount}]`) : '';
+  const tagWidth = visibleLength(pageTag);
+  const textBudget = Math.max(6, contentWidth - tagWidth);
+  scrollable = visibleLength(line) > textBudget;
+  if (!scrollable) scrollOffset = 0;
+  const baseLine = scrollable ? sliceVisible(line, scrollOffset, textBudget) : shorten(line, textBudget);
+  const fitted = `${baseLine}${pageTag}`;
   const filled = fillLineToWidth(fitted, contentWidth);
-  process.stdout.write(`\x1b[2K\r${EDGE_PADDING}${filled}`);
+  process.stdout.write(`\x1b[2K\r${EDGE_PADDING}${FRAME_LEFT}${filled}${FRAME_RIGHT}`);
 
   // Poll after painting so state appears immediately on startup.
   // When sampler process is enabled, render loop only consumes cached telemetry.
@@ -975,6 +1100,48 @@ function render() {
       pingState = readPing();
     }
   }
+}
+
+function setupInputControls() {
+  if (inputBound || !process.stdin.isTTY || process.env.ZVIBE_STATUSBAR_SAMPLER === '1') return;
+  inputBound = true;
+  try {
+    if (typeof process.stdin.setRawMode === 'function') process.stdin.setRawMode(true);
+  } catch {}
+  process.stdin.resume();
+  process.stdin.on('data', (chunk) => {
+    const input = String(chunk || '');
+    if (!input) return;
+
+    const pageNext = () => { pageIndex = clampPageIndex(pageIndex + 1, pageCount); };
+    const pagePrev = () => { pageIndex = clampPageIndex(pageIndex - 1, pageCount); };
+    const scrollNext = () => { if (scrollable) scrollOffset += 4; };
+    const scrollPrev = () => { if (scrollable) scrollOffset = Math.max(0, scrollOffset - 4); };
+
+    if (/\x1b\[<64;[0-9]+;[0-9]+[mM]/.test(input) || input === '\x1b[A' || input === '\x1b[C') {
+      if (pageCount > 1) pageNext();
+      else scrollNext();
+      render();
+      return;
+    }
+    if (/\x1b\[<65;[0-9]+;[0-9]+[mM]/.test(input) || input === '\x1b[B' || input === '\x1b[D') {
+      if (pageCount > 1) pagePrev();
+      else scrollPrev();
+      render();
+      return;
+    }
+    if (input === ']' || input.toLowerCase() === 'n') {
+      if (pageCount > 1) pageNext();
+      else scrollNext();
+      render();
+      return;
+    }
+    if (input === '[' || input.toLowerCase() === 'p') {
+      if (pageCount > 1) pagePrev();
+      else scrollPrev();
+      render();
+    }
+  });
 }
 
 function sendSamplerMetrics(payload) {
@@ -1056,6 +1223,7 @@ function startSamplerProcess() {
 }
 
 process.on('SIGINT', () => {
+  try { if (inputBound && typeof process.stdin.setRawMode === 'function') process.stdin.setRawMode(false); } catch {}
   if (samplerChild) {
     try { samplerChild.kill('SIGTERM'); } catch {}
   }
@@ -1064,6 +1232,7 @@ process.on('SIGINT', () => {
 });
 
 process.on('SIGTERM', () => {
+  try { if (inputBound && typeof process.stdin.setRawMode === 'function') process.stdin.setRawMode(false); } catch {}
   if (samplerChild) {
     try { samplerChild.kill('SIGTERM'); } catch {}
   }
@@ -1077,6 +1246,7 @@ if (require.main === module) {
     return;
   }
   samplerChild = startSamplerProcess();
+  setupInputControls();
   render();
   setInterval(render, TICK_MS);
 }
@@ -1086,6 +1256,9 @@ module.exports = {
   shorten,
   fillLineToWidth,
   packFieldsByWidth,
+  paginateFields,
+  clampPageIndex,
+  layoutPinnedEdges,
   segmentRatios,
   layoutThreeColumns
 };
